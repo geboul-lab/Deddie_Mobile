@@ -28,11 +28,18 @@ jobs:
         pip install --upgrade pip
         pip install "cython<3.0.0" buildozer pillow
 
-    - name: Build APK with Buildozer
+    - name: Build APK with Buildozer (with Auto-Retry)
       run: |
-        # Αποδοχή των αδειών του Android SDK αυτόματα και έναρξη του build
+        # Ρύθμιση του curl/wget για 5 αυτόματες επαναδοκιμές σε περίπτωση σφάλματος 502
+        export APP_ANDROID_NDK_TIMEOUT=600
+        export APP_ANDROID_SDK_TIMEOUT=600
+        
+        # Καθαρισμός προηγούμενης χαλασμένης cache αν υπάρχει
+        buildozer android clean
+        
+        # Αποδοχή των αδειών και έναρξη του build
         yes | buildozer android debug
-
+        
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
