@@ -240,25 +240,20 @@ class MobileFuotaApp(MDApp):
                 time.sleep(1)
 
     def connect_tcp_worker(self, ip, port):
-        """Background Thread: Πραγματοποιεί τη σύνδεση TCP"""
         try:
             self.tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.tcp_client.settimeout(5.0)
             self.tcp_client.connect((ip, port))
             self.tcp_client.settimeout(None)
-            
             self.is_connected = True
-            
             Clock.schedule_once(lambda dt: self.update_ui_connection_state(True, ip))
             self.log(f"Connected to TCP {ip}:{port}")
-            
             self.tcp_reader_loop()
         except Exception as e:
             self.log(f"TCP Connection Failed: {str(e)}")
             self.disconnect_tcp()
 
     def update_ui_connection_state(self, connected, ip=""):
-        """Ενημερώνει τα οπτικά στοιχεία της φόρμας για τη σύνδεση"""
         if connected:
             self.root.ids.status_led.text_color = (0, 1, 0, 1)
             self.root.ids.status_label.text = f"Connected to {ip}"
@@ -270,27 +265,21 @@ class MobileFuotaApp(MDApp):
             self.root.ids.btn_fuota_rec.disabled = True
             self.root.ids.btn_fuota_trx.disabled = True
             self.root.ids.fuota_progress.value = 0
-            self.root.ids.progress_status_text.text = "Progress: 0%" # <--- ΕΔΩ ΜΠΗΚΕ
+            self.root.ids.progress_status_text.text = "Progress: 0%"
 
     def disconnect_tcp(self):
-        """Κλείνει με ασφάλεια το TCP Socket"""
         self.is_connected = False
         self.is_fuota_active = False
         if self.tcp_client:
-            try:
-                self.tcp_client.close()
+            try: self.tcp_client.close()
             except: pass
-        
-        # Ενημέρωση του UI: Επαναφορά κατάστασης και μηδενισμός του Target ID σε "00"
         def reset_ui(dt):
             self.update_ui_connection_state(False)
-            self.root.ids.target_id_input.text = "000000000" # <-- ΜΗΔΕΝΙΣΜΟΣ ΤΟΥ ID
-            
+            self.root.ids.target_id_input.text = "00"
         Clock.schedule_once(reset_ui)
         self.log("Disconnected from device.")
 
     def tcp_reader_loop(self):
-        """Το κύριο Loop ανάγνωσης δεδομένων (Αντίστοιχο του Delphi Thread)"""
         while self.is_connected:
             try:
                 ready_data = self.tcp_client.recv(1024)
@@ -299,19 +288,14 @@ class MobileFuotaApp(MDApp):
                     break
                 
                 incoming_msg = ""
-                try:
-                    incoming_msg = ready_data.decode('utf-8').strip()
-                except:
-                    pass
+                try: incoming_msg = ready_data.decode('utf-8').strip()
+                except: pass
 
-                # --- 1. ΕΛΕΓΧΟΣ ΓΙΑ ΕΝΤΟΛΕΣ FUOTA ---
                 if incoming_msg:
-                    # Έλεγχος για αιτήματα chunk
                     if ',' in incoming_msg:
                         command, value = incoming_msg.split(',', 1)
                         command = command.strip()
                         value = value.strip()
-                        
                         if command in ['READY_FOR_CHUNK', 'ACK_CHUNK', 'RETRY_CHUNK']:
                             self.fuota_last_action = datetime.now()
                             self.is_fuota_active = True
@@ -319,128 +303,69 @@ class MobileFuotaApp(MDApp):
                             threading.Thread(target=self.send_chunk, args=(chunk_idx,), daemon=True).start()
                             continue
                     
-                    # Έλεγχος προόδου LoRa αναμετάδοσης (Transmitter)
                     if "LORA_PROG:" in incoming_msg:
                         self.fuota_last_action = datetime.now()
                         self.is_fuota_active = True
                         try:
-                            prog_str = incoming_msg.split("LORA_PROG:")[1].replace("%", "").strip()
+                            prog_str = incoming_msg.split("LORA_PROG:").replace("%", "").strip()
                             prog_val = int(prog_str)
-                            
-                            # Ενημέρωση της Progress Bar και του κειμένου σε TR: XX%
                             def update_tr_progress(dt):
                                 self.root.ids.fuota_progress.value = prog_val
                                 self.root.ids.progress_status_text.text = f"TR: {prog_val}%"
                             Clock.schedule_once(update_tr_progress)
-                        except:
-                            pass
+                        except: pass
                         continue
-
+                        
                     if "REMOTE_UPDATE_OK" in incoming_msg:
                         self.log("FUOTA: Remote Update completed successfully!")
                         self.is_fuota_active = False
-                        
-                        # Ορισμός της συνάρτησης (έχει 24 κενά)
-                        def set_full_progress_rec(dt):
+                        def set_full_progress(dt):
                             self.root.ids.fuota_progress.value = 100
                             self.root.ids.progress_status_text.text = "TR: 100%"
-                            
-                        # Εκτέλεση της συνάρτησης (έχει 24 κενά - ΑΚΡΙΒΩΣ κάτω από το def)
-                        Clock.schedule_once(set_full_progress_rec)
+                        Clock.schedule_once(set_full_progress)
                         continue
-
 
                     if "VERIFY SUCCESS" in incoming_msg:
                         self.log("Transfer to Receiver Completed Successfully!")
                         self.is_fuota_active = False
-                         # Επαναφορά της μπάρας και του κειμένου προόδου
+                        def set_full_progress_rec(dt):
+                            self.root.ids.fuota_progress.value = 100
+                            self.root.ids.progress_status_text.text = "REC: 100%"
+                        Clock.schedule_once(set_full_progress_rec)
+                        continue
+
+                    if "FUOTA_SUCCESS" in incoming_msg:
+                        self.log("FUOTA: Firmware Update Completed Successfully!!!")
+                        self.is_fuota_active = False
                         def reset_progress(dt):
                             self.root.ids.fuota_progress.value = 0
                             self.root.ids.progress_status_text.text = "Progress: 0%"
-                        Clock.schedule_once(reset_progress)
-                        continue                       
+                        Clock.schedule_once(reset_progress, 2.0)
+                        continue
 
-                    # ΝΕΟΣ ΕΛΕΓΧΟΣ: Διαχείριση ακύρωσης από τη συσκευή
-                    if "DOWNLOAD ABORTED" in incoming_msg:
-                        self.log("FUOTA: Finished by Receiver (LoRa Re-enabled).")
+                    if "DOWNLOAD ANORTED" in incoming_msg or "DOWNLOAD ABORTED" in incoming_msg:
+                        self.log("FUOTA: Aborted by Receiver (LoRa Re-enabled).")
                         self.is_fuota_active = False
-                        # <--- ΕΔΩ ΜΠΗΚΕ Ο ΜΗΔΕΝΙΣΜΟΣ
                         def reset_on_abort(dt):
                             self.root.ids.fuota_progress.value = 0
                             self.root.ids.progress_status_text.text = "Progress: 0%"
                         Clock.schedule_once(reset_on_abort)
                         continue
                 
-                # --- 2. ΕΛΕΓΧΟΣ ΓΙΑ OK & DATA (Μόνο αν ΔΕΝ είμαστε σε FUOTA) ---
                 if not self.is_fuota_active:
                     if ready_data == b'OK\r\n' or ready_data == b'OK':
                         self.log("Heartbeat: OK")
                     else:
                         self.log(f"LoRa Data: Received {len(ready_data)} bytes")
                 else:
-                    if incoming_msg:
-                        self.log(f"FUOTA Msg: {incoming_msg}")
+                    if incoming_msg: self.log(f"FUOTA Msg: {incoming_msg}")
                         
             except Exception as e:
                 self.log(f"Reader Error: {str(e)}")
                 break
-                
         self.disconnect_tcp()
 
-    def send_chunk(self, chunk_index):
-        """Αποστολή του chunk firmware των 256 bytes στη συσκευή"""
-        if not os.path.exists(self.bin_filename):
-            self.log("Error: testcode.bin not found!")
-            return
-            
-        try:
-            with open(self.bin_filename, "rb") as f:
-                f.seek(chunk_index * self.chunk_size)
-                raw_chunk = f.read(self.chunk_size)
-                
-            file_bytes = os.path.getsize(self.bin_filename)
-            total_chunks = file_bytes // self.chunk_size
-            if file_bytes % self.chunk_size > 0:
-                total_chunks += 1
-                
-            percent = int((chunk_index / total_chunks) * 100) if total_chunks > 0 else 0
-            # Ενημέρωση της Progress Bar και του κειμένου σε REC: XX%
-            def update_rec_progress(dt):
-                self.root.ids.fuota_progress.value = percent
-                self.root.ids.progress_status_text.text = f"REC: {percent}%"
-            Clock.schedule_once(update_rec_progress)
-
-            
-            if raw_chunk:
-                packet = bytearray()
-                packet.append(0xAA)
-                packet.append(0x55)
-                packet.append((chunk_index >> 8) & 0xFF)
-                packet.append(chunk_index & 0xFF)
-                
-                if len(raw_chunk) < self.chunk_size:
-                    raw_chunk = raw_chunk + b'\xFF' * (self.chunk_size - len(raw_chunk))
-                    
-                packet.extend(raw_chunk)
-                
-                crc16 = self.calculate_crc16_ccitt(raw_chunk)
-                packet.append((crc16 >> 8) & 0xFF)
-                packet.append(crc16 & 0xFF)
-                
-                self.tcp_client.sendall(packet)
-                self.log(f"Sent chunk {chunk_index}/{total_chunks}")
-            else:
-                # ΔΙΟΡΘΩΣΗ: Όταν τελειώσουν τα Chunks, ΔΕΝ κλείνουμε το self.is_fuota_active.
-                # Περιμένουμε το τελικό VERIFY SUCCESS ή REMOTE_UPDATE_OK από τη συσκευή.
-                finish_cmd = "FINISH_FUOTA_RX\n" if self.is_fuota_rx_only else "FINISH_FUOTA_TX\n"
-                self.tcp_client.sendall(finish_cmd.encode('utf-8'))
-                self.log("FUOTA: All packets sent. Waiting for final confirmation...")
-                
-        except Exception as e:
-            self.log(f"Failed to send chunk: {str(e)}")
-                    
     def calculate_crc16_ccitt(self, data):
-        """Υπολογισμός CRC16 CCITT (Αντίστοιχο του CalculateCRC16_Delphi)"""
         crc = 0xFFFF
         for byte in data:
             crc = (crc >> 8) | (crc << 8) & 0xFFFF
@@ -449,9 +374,47 @@ class MobileFuotaApp(MDApp):
             crc ^= (crc << 12) & 0xFFFF
             crc ^= ((crc & 0xFF) << 5) & 0xFFFF
         return crc
-        
+
+    def send_chunk(self, chunk_index):
+        if not os.path.exists(self.bin_filename):
+            self.log("Error: testcode.bin not found!")
+            return
+        try:
+            with open(self.bin_filename, "rb") as f:
+                f.seek(chunk_index * self.chunk_size)
+                raw_chunk = f.read(self.chunk_size)
+            file_bytes = os.path.getsize(self.bin_filename)
+            total_chunks = file_bytes // self.chunk_size
+            if file_bytes % self.chunk_size > 0: total_chunks += 1
+            percent = int((chunk_index / total_chunks) * 100) if total_chunks > 0 else 0
+            
+            def update_rec_progress(dt):
+                self.root.ids.fuota_progress.value = percent
+                self.root.ids.progress_status_text.text = f"REC: {percent}%"
+            Clock.schedule_once(update_rec_progress)
+            
+            if raw_chunk:
+                packet = bytearray()
+                packet.append(0xAA)
+                packet.append(0x55)
+                packet.append((chunk_index >> 8) & 0xFF)
+                packet.append(chunk_index & 0xFF)
+                if len(raw_chunk) < self.chunk_size:
+                    raw_chunk = raw_chunk + b'\xFF' * (self.chunk_size - len(raw_chunk))
+                packet.extend(raw_chunk)
+                crc16 = self.calculate_crc16_ccitt(raw_chunk)
+                packet.append((crc16 >> 8) & 0xFF)
+                packet.append(crc16 & 0xFF)
+                self.tcp_client.sendall(packet)
+                self.log(f"Sent chunk {chunk_index}/{total_chunks}")
+            else:
+                finish_cmd = "FINISH_FUOTA_RX\n" if self.is_fuota_rx_only else "FINISH_FUOTA_TX\n"
+                self.tcp_client.sendall(finish_cmd.encode('utf-8'))
+                self.log("FUOTA: All packets sent. Waiting for final confirmation...")
+        except Exception as e:
+            self.log(f"Failed to send chunk: {str(e)}")
+
     def start_fuota(self, is_rx_only):
-        """Έναρξη της διαδικασίας FUOTA"""
         if not self.is_connected or self.file_size == 0:
             self.log("Cannot start FUOTA. Ensure device is connected and bin file is created.")
             return
@@ -468,33 +431,30 @@ class MobileFuotaApp(MDApp):
             self.is_fuota_active = False
 
     def keep_alive_tick(self, dt):
-        """Timer Tick: Στέλνει PING αν είμαστε συνδεδεμένοι και όχι σε FUOTA"""
         if self.is_connected and not self.is_fuota_active:
             try:
                 self.tcp_client.sendall(b"PING\n")
                 self.root.ids.status_led.text_color = (1, 1, 0, 1)
                 Clock.schedule_once(lambda d: setattr(self.root.ids.status_led, 'text_color', (0, 1, 0, 1)), 0.5)
-            except:
-                self.disconnect_tcp()
-                
+            except: self.disconnect_tcp()
+
     def check_timeouts(self, dt):
+        """Timer Tick: Έλεγχος αν η Nucleo σταμάτησε να απαντάει κατά το FUOTA"""
         if self.is_fuota_active:
             if (datetime.now() - self.fuota_last_action).total_seconds() > 10:
                 self.log("!!! FUOTA ABORTED: Timeout - Sent ABORT to Nucleo !!!")
-                try:
+                try: 
                     self.tcp_client.sendall(b"ABORT_FUOTA\n")
                 except: 
                     pass
                 self.is_fuota_active = False
                 
-                # <--- ΕΔΩ ΜΠΗΚΕ Ο ΜΗΔΕΝΙΣΜΟΣ
+                # Ορισμός της συνάρτησης επαναφοράς UI με σωστά κενά
                 def reset_on_timeout(dt):
                     self.root.ids.fuota_progress.value = 0
                     self.root.ids.progress_status_text.text = "Progress: 0%"
+                    
                 Clock.schedule_once(reset_on_timeout)
-
 
 if __name__ == '__main__':
     MobileFuotaApp().run()
-
-
