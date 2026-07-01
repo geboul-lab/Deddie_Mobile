@@ -6,7 +6,7 @@ import time
 import random
 from datetime import datetime
 
-# Ρύθμιση μεγέθους παραθύρου για δοκιμή στο Desktop (προσομοίωση κινητού)
+# Ρύθμιση μεγέθους παραθύρου για Desktop
 from kivy.config import Config
 Config.set('graphics', 'width', '360')
 Config.set('graphics', 'height', '640')
@@ -26,9 +26,8 @@ MDScreen:
         padding: "16dp"
         spacing: "12dp"
 
-        # Επάνω Μπάρα / Τίτλος
         MDLabel:
-            text: "ΔΕΔΔΗΕ Mobile FUOTA"
+            text: "Nucleo Mobile FUOTA"
             halign: "center"
             font_style: "H5"
             theme_text_color: "Custom"
@@ -36,21 +35,19 @@ MDScreen:
             size_hint_y: None
             height: "40dp"
 
-        # Πεδίο εισαγωγής ID Συσκευής
         MDTextField:
             id: target_id_input
             text: "000000000"
-            hint_text: "Αριθμός Μετρητή"
+            hint_text: "Target ID"
             mode: "rectangle"
-            multiline: False        # Κλειδώνει το πεδίο σε 1 γραμμή για να μην κουνιέται ο κέρσορας
-            font_size: "16sp"       # Καθαρό και ευανάγνωστο μέγεθος
-            size_hint_x: None       # Απενεργοποιούμε το ποσοστό πλάτους
-            width: "120dp"          # Σταθερό, μαζεμένο πλάτος κατάλληλο για ID
-            pos_hint: {"center_x": 0.5} # Κεντράρει το κουτί τέλεια στην οθόνη
+            multiline: False
+            font_size: "16sp"
+            size_hint_x: None
+            width: "120dp"
+            pos_hint: {"center_x": 0.5}
             text_color_focus: 1, 1, 1, 1
             hint_text_color: 0.7, 0.7, 0.7, 1
 
-        # Status Layout (Λαμπάκι & Κατάσταση)
         MDBoxLayout:
             orientation: 'horizontal'
             size_hint_y: None
@@ -61,7 +58,7 @@ MDScreen:
                 id: status_led
                 icon: "circle"
                 theme_text_color: "Custom"
-                text_color: 1, 0, 0, 1 # Κόκκινο αρχικά (Disconnected)
+                text_color: 1, 0, 0, 1
                 size_hint_x: None
                 width: "24dp"
             
@@ -71,7 +68,6 @@ MDScreen:
                 theme_text_color: "Custom"
                 text_color: 0.8, 0.8, 0.8, 1
 
-        # Κουμπιά Διαχείρισης Αρχείου & Σύνδεσης
         MDBoxLayout:
             orientation: 'horizontal'
             spacing: "8dp"
@@ -87,7 +83,6 @@ MDScreen:
                 md_bg_color: 0.7, 0.1, 0.1, 1
                 on_release: app.disconnect_tcp()
 
-        # Κουμπιά FUOTA
         MDBoxLayout:
             orientation: 'horizontal'
             spacing: "8dp"
@@ -106,7 +101,6 @@ MDScreen:
                 disabled: True
                 on_release: app.start_fuota(is_rx_only=False)
 
-        # Δυναμικό κείμενο κατάστασης προόδου
         MDLabel:
             id: progress_status_text
             text: "Progress: 0%"
@@ -116,7 +110,6 @@ MDScreen:
             size_hint_y: None
             height: "20dp"
 
-        # Μπάρα Προόδου FUOTA
         MDProgressBar:
             id: fuota_progress
             value: 0
@@ -124,7 +117,6 @@ MDScreen:
             size_hint_y: None
             height: "8dp"
 
-        # Scrollable Log (Αντί για Memo)
         MDScrollView:
             do_scroll_x: False
             do_scroll_y: True
@@ -135,7 +127,7 @@ MDScreen:
                 text: "System started...\\n"
                 font_style: "Caption"
                 theme_text_color: "Custom"
-                text_color: 0, 1, 0, 1 # Πράσινα γράμματα
+                text_color: 0, 1, 0, 1
                 size_hint_y: None
                 height: self.texture_size[1]
                 valign: "top"
@@ -146,7 +138,6 @@ class MobileFuotaApp(MDApp):
         self.theme_cls.theme_style = "Dark"
         self.theme_cls.primary_palette = "Blue"
         
-        # Αρχικοποίηση μεταβλητών κατάστασης
         self.tcp_client = None
         self.udp_server = None
         self.is_connected = False
@@ -157,7 +148,6 @@ class MobileFuotaApp(MDApp):
         self.chunk_size = 256
         self.fuota_last_action = datetime.now()
         
-        # Καθορισμός φακέλου αποθήκευσης (Sandbox για κινητά)
         if platform == 'android':
             from android.storage import app_storage_path
             self.storage_path = app_storage_path()
@@ -166,34 +156,27 @@ class MobileFuotaApp(MDApp):
             
         self.bin_filename = os.path.join(self.storage_path, "testcode.bin")
 
-        # Εκκίνηση του UDP Listener σε background thread
         threading.Thread(target=self.udp_listener_worker, daemon=True).start()
         
-        # Timers για Keep Alive και Timeouts
         Clock.schedule_interval(self.keep_alive_tick, 10.0)
         Clock.schedule_interval(self.check_timeouts, 1.0)
 
         return Builder.load_string(KV)
 
     def log(self, message):
-        """Ασφαλής προσθήκη μηνύματος στο Log UI από οποιοδήποτε thread"""
         timestamp = datetime.now().strftime("%H:%M:%S")
         full_line = f"{timestamp} -> {message}\n"
-        
         def update_label(dt):
             self.root.ids.log_output.text += full_line
         Clock.schedule_once(update_label)
 
     def create_mock_bin(self):
-        """Δημιουργία τυχαίου binary αρχείου"""
         random_size = random.randint(25000, 30000)
         random_bytes = bytearray(random.getrandbits(8) for _ in range(random_size))
-        
         import zlib
         crc = zlib.crc32(random_bytes) & 0xffffffff
         self.file_size = random_size
         self.file_crc32 = f"{crc:08X}"
-        
         try:
             with open(self.bin_filename, "wb") as f:
                 f.write(random_bytes)
@@ -202,10 +185,8 @@ class MobileFuotaApp(MDApp):
             self.log(f"File Creation Error: {str(e)}")
 
     def udp_listener_worker(self):
-        """Background Thread: Ακούει στο UDP Port 8081"""
         self.udp_server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        
         try:
             self.udp_server.bind(('0.0.0.0', 8081))
             self.log("UDP Server listening on port 8081...")
@@ -217,22 +198,22 @@ class MobileFuotaApp(MDApp):
             try:
                 data, addr = self.udp_server.recvfrom(1024)
                 raw_str = data.decode('utf-8', errors='ignore')
-                
                 extracted_id = ""
                 extracted_ip = ""
                 
+                # ΔΙΟΡΘΩΜΕΝΟ: Ασφαλές split σε δύο βήματα χωρίς errors
                 if "ID:" in raw_str:
                     try:
-                        extracted_id = raw_str.split("ID:")[1].split("-")[0].strip()
+                        id_part = raw_str.split("ID:")[1]
+                        extracted_id = id_part.split("-")[0].strip()
                     except: pass
                     
                 if '"' in raw_str:
                     try:
-                        extracted_ip = raw_str.split('"')[1]
+                        extracted_ip = raw_str.split('"')[1].strip()
                     except: pass
 
                 target_id = self.root.ids.target_id_input.text
-                
                 if extracted_ip and extracted_id == target_id and not self.is_connected:
                     self.log(f"Device ID: {extracted_id} detected at {extracted_ip}")
                     threading.Thread(target=self.connect_tcp_worker, args=(extracted_ip, 8080), daemon=True).start()
@@ -302,53 +283,63 @@ class MobileFuotaApp(MDApp):
                             chunk_idx = int(value)
                             threading.Thread(target=self.send_chunk, args=(chunk_idx,), daemon=True).start()
                             continue
-                    
                     if "LORA_PROG:" in incoming_msg:
                         self.fuota_last_action = datetime.now()
                         self.is_fuota_active = True
                         try:
-                            prog_str = incoming_msg.split("LORA_PROG:").replace("%", "").strip()
+                            prog_str = incoming_msg.split("LORA_PROG:")[1].replace("%", "").strip()
                             prog_val = int(prog_str)
+                            
                             def update_tr_progress(dt):
                                 self.root.ids.fuota_progress.value = prog_val
                                 self.root.ids.progress_status_text.text = f"TR: {prog_val}%"
+                                
                             Clock.schedule_once(update_tr_progress)
-                        except: pass
+                        except: 
+                            pass
                         continue
                         
                     if "REMOTE_UPDATE_OK" in incoming_msg:
                         self.log("FUOTA: Remote Update completed successfully!")
                         self.is_fuota_active = False
+                        
                         def set_full_progress(dt):
                             self.root.ids.fuota_progress.value = 100
                             self.root.ids.progress_status_text.text = "TR: 100%"
+                            
                         Clock.schedule_once(set_full_progress)
                         continue
 
                     if "VERIFY SUCCESS" in incoming_msg:
                         self.log("Transfer to Receiver Completed Successfully!")
                         self.is_fuota_active = False
+                        
                         def set_full_progress_rec(dt):
                             self.root.ids.fuota_progress.value = 100
                             self.root.ids.progress_status_text.text = "REC: 100%"
+                            
                         Clock.schedule_once(set_full_progress_rec)
                         continue
 
                     if "FUOTA_SUCCESS" in incoming_msg:
                         self.log("FUOTA: Firmware Update Completed Successfully!!!")
                         self.is_fuota_active = False
+                        
                         def reset_progress(dt):
                             self.root.ids.fuota_progress.value = 0
                             self.root.ids.progress_status_text.text = "Progress: 0%"
+                            
                         Clock.schedule_once(reset_progress, 2.0)
                         continue
 
                     if "DOWNLOAD ANORTED" in incoming_msg or "DOWNLOAD ABORTED" in incoming_msg:
                         self.log("FUOTA: Aborted by Receiver (LoRa Re-enabled).")
                         self.is_fuota_active = False
+                        
                         def reset_on_abort(dt):
                             self.root.ids.fuota_progress.value = 0
                             self.root.ids.progress_status_text.text = "Progress: 0%"
+                            
                         Clock.schedule_once(reset_on_abort)
                         continue
                 
@@ -358,11 +349,13 @@ class MobileFuotaApp(MDApp):
                     else:
                         self.log(f"LoRa Data: Received {len(ready_data)} bytes")
                 else:
-                    if incoming_msg: self.log(f"FUOTA Msg: {incoming_msg}")
+                    if incoming_msg: 
+                        self.log(f"FUOTA Msg: {incoming_msg}")
                         
             except Exception as e:
                 self.log(f"Reader Error: {str(e)}")
                 break
+                
         self.disconnect_tcp()
 
     def calculate_crc16_ccitt(self, data):
@@ -383,14 +376,18 @@ class MobileFuotaApp(MDApp):
             with open(self.bin_filename, "rb") as f:
                 f.seek(chunk_index * self.chunk_size)
                 raw_chunk = f.read(self.chunk_size)
+                
             file_bytes = os.path.getsize(self.bin_filename)
             total_chunks = file_bytes // self.chunk_size
-            if file_bytes % self.chunk_size > 0: total_chunks += 1
+            if file_bytes % self.chunk_size > 0: 
+                total_chunks += 1
+                
             percent = int((chunk_index / total_chunks) * 100) if total_chunks > 0 else 0
             
             def update_rec_progress(dt):
                 self.root.ids.fuota_progress.value = percent
                 self.root.ids.progress_status_text.text = f"REC: {percent}%"
+                
             Clock.schedule_once(update_rec_progress)
             
             if raw_chunk:
@@ -399,12 +396,16 @@ class MobileFuotaApp(MDApp):
                 packet.append(0x55)
                 packet.append((chunk_index >> 8) & 0xFF)
                 packet.append(chunk_index & 0xFF)
+                
                 if len(raw_chunk) < self.chunk_size:
                     raw_chunk = raw_chunk + b'\xFF' * (self.chunk_size - len(raw_chunk))
+                    
                 packet.extend(raw_chunk)
+                
                 crc16 = self.calculate_crc16_ccitt(raw_chunk)
                 packet.append((crc16 >> 8) & 0xFF)
                 packet.append(crc16 & 0xFF)
+                
                 self.tcp_client.sendall(packet)
                 self.log(f"Sent chunk {chunk_index}/{total_chunks}")
             else:
@@ -436,10 +437,10 @@ class MobileFuotaApp(MDApp):
                 self.tcp_client.sendall(b"PING\n")
                 self.root.ids.status_led.text_color = (1, 1, 0, 1)
                 Clock.schedule_once(lambda d: setattr(self.root.ids.status_led, 'text_color', (0, 1, 0, 1)), 0.5)
-            except: self.disconnect_tcp()
+            except: 
+                self.disconnect_tcp()
 
     def check_timeouts(self, dt):
-        """Timer Tick: Έλεγχος αν η Nucleo σταμάτησε να απαντάει κατά το FUOTA"""
         if self.is_fuota_active:
             if (datetime.now() - self.fuota_last_action).total_seconds() > 10:
                 self.log("!!! FUOTA ABORTED: Timeout - Sent ABORT to Nucleo !!!")
@@ -449,7 +450,6 @@ class MobileFuotaApp(MDApp):
                     pass
                 self.is_fuota_active = False
                 
-                # Ορισμός της συνάρτησης επαναφοράς UI με σωστά κενά
                 def reset_on_timeout(dt):
                     self.root.ids.fuota_progress.value = 0
                     self.root.ids.progress_status_text.text = "Progress: 0%"
@@ -458,3 +458,4 @@ class MobileFuotaApp(MDApp):
 
 if __name__ == '__main__':
     MobileFuotaApp().run()
+                   
